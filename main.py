@@ -1,6 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
 import argparse
+import concurrent.futures
+from queue import Queue
+import threading
 
 class Node:
     def __init__(self, data):
@@ -8,76 +11,108 @@ class Node:
         self.left = None
         self.right = None
 
-    def dfs(self, level=0, prefix="Root"):
+    def dfs(self, level=0, prefix="", is_last=True):
         if self is None:
             return
-
-        print(" " * level + prefix + ": " + self.data)
+        if level == 0:
+            print(self.data)
+        else:
+            print(prefix + "+-- " + self.data)
         if self.left:
-            self.left.dfs(level + 1, "L")
+            self.left.dfs(level + 1, prefix + ("    " if is_last else "|   "), False)
         if self.right:
-            self.right.dfs(level + 1, "R")
+            self.right.dfs(level + 1, prefix + ("    " if is_last else "|   "), True)
 
     @classmethod
     def build_tree(self, root_url, depth):
         root = Node(root_url)
-        visited = set()  # Keep track of visited URLs
-        self.build_tree_recursive(root, depth, visited)
+        visited = set()
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            self.build_tree_recursive(root, depth, visited, executor)
         return root
 
     @staticmethod
-    def build_tree_recursive(node, depth, visited):
+    def build_tree_recursive(node, depth, visited, executor):
         if depth == 0 or node.data in visited:
             return
-
         visited.add(node.data)
-
         try:
             queue = req(node.data)
-    
+            futures = []
             for url in queue:
                 if url not in visited:
                     if node.left is None:
                         node.left = Node(url)
-                        Node.build_tree_recursive(node.left, depth - 1, visited)
+                        future = executor.submit(Node.build_tree_recursive, node.left, depth - 1, visited, executor)
+                        futures.append(future)
                     elif node.right is None:
-                        # print(node.data, url, "RIGHT")
                         node.right = Node(url)
-                        Node.build_tree_recursive(node.right, depth - 1, visited)
+                        future = executor.submit(Node.build_tree_recursive, node.right, depth - 1, visited, executor)
+                        futures.append(future)
                     else:
-                        return
+                        break
+            concurrent.futures.wait(futures)
         except Exception as e:
             print(f"Error fetching URLs for {node.data}: {e}")
+
+def bfs(url, depth):
+    visited = set()
+    queue = Queue()
+    queue.put((url, 0, "", True))
+    visited.add(url)
+
+    while not queue.empty():
+        current_url, current_depth, prefix, is_last = queue.get()
+        if current_depth > depth:
+            break
+
+        if current_depth == 0:
+            print(current_url)
+        else:
+            print(prefix + "+-- " + current_url)
+
+        if current_depth < depth:
+            try:
+                urls = req(current_url)
+                for i, new_url in enumerate(urls):
+                    if new_url not in visited:
+                        queue.put((new_url, current_depth + 1, prefix + ("    " if is_last else "|   "), i == len(urls) - 1))
+                        visited.add(new_url)
+                        with open(new_url.split("/")[0] + ".txt", "a") as file:
+                            file.write("https://" + new_url + "\n")
+            except Exception as e:
+                print(f"Error fetching URL: {current_url} - {e}")
 
 def req(url):
     try:
         queue = []
-        response = requests.get("https://" + url.strip())
+        response = requests.get(url.strip())
         soup = BeautifulSoup(response.content, 'html.parser')
-
         for link in soup.find_all('a'):
             href = link.get('href')
             if href and href.startswith('http'):
-                raw = href.split('://')[1]
-                queue.append(raw)
-                with open(raw.split("/")[0] + ".txt", "a") as file:
-                    file.write(href + "\n")
-
-
-        print(queue[0], url)
+                queue.append(href)
         return queue
-    except:
-        print(url)
+    except Exception as e:
+        print(f"Error fetching URL: {url} - {e}")
         return []
 
 def main():
     parser = argparse.ArgumentParser(description="Web Crawler")
     parser.add_argument("--url", help="Root URL to start crawling from")
+    parser.add_argument("--depth", help="URL depth to crawl")
     args = parser.parse_args()
-    
+
     root_url = args.url
-    depth = 20
+    # if "://" in root_url:
+    #     root_url = root_url.split('://')[1]
+    depth = int(args.depth)
+
+    print("DFS Traversal:")
     root = Node.build_tree(root_url, depth)
     root.dfs()
+
+    print("\nBFS Traversal:")
+    bfs(root_url, depth)
 
 main()
