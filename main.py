@@ -4,6 +4,7 @@ import concurrent.futures
 from queue import Queue
 import threading
 import re
+import tldextract
 
 class Node:
     def __init__(self, data):
@@ -78,8 +79,13 @@ def bfs(url, depth):
                     if new_url not in visited:
                         queue.put((new_url, current_depth + 1, prefix + ("    " if is_last else "|   "), i == len(urls) - 1))
                         visited.add(new_url)
-                        with open(new_url.split("/")[0] + ".txt", "a") as file:
-                            file.write("https://" + new_url + "\n")
+                        path = new_url.split("://")[1].split("/")[0]
+                        tld = tldextract.extract(path).suffix
+                        path = path.split(tld)[0]
+                        path = path.split(".")[len(path.split(".")) - 2]
+                        
+                        with open(path + ".txt", "a") as file:
+                            file.write(new_url + "\n")
             except Exception as e:
                 print(f"Error fetching URL: {current_url} - {e}")
 
