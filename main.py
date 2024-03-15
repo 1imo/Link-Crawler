@@ -1,9 +1,9 @@
 import requests
-from bs4 import BeautifulSoup
 import argparse
 import concurrent.futures
 from queue import Queue
 import threading
+import re
 
 class Node:
     def __init__(self, data):
@@ -85,14 +85,11 @@ def bfs(url, depth):
 
 def req(url):
     try:
-        queue = []
         response = requests.get(url.strip())
-        soup = BeautifulSoup(response.content, 'html.parser')
-        for link in soup.find_all('a'):
-            href = link.get('href')
-            if href and href.startswith('http'):
-                queue.append(href)
-        return queue
+        content = str(response.content)
+        urls = re.findall(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', content)
+        
+        return urls
     except Exception as e:
         print(f"Error fetching URL: {url} - {e}")
         return []
@@ -104,8 +101,6 @@ def main():
     args = parser.parse_args()
 
     root_url = args.url
-    # if "://" in root_url:
-    #     root_url = root_url.split('://')[1]
     depth = int(args.depth)
 
     print("DFS Traversal:")
